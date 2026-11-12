@@ -1,0 +1,119 @@
+{% extends "kiosk/base.html" %}
+{% block title %}Menu manager · QueueFree RR Cafe{% endblock %}
+
+{% block content %}
+<main class="mgr">
+  <div class="mgr-head">
+    <div>
+      <h1>Menu manager</h1>
+      <p style="color:var(--muted);margin:6px 0 0">Changes here appear on the customer menu within seconds. Prices save as soon as you edit them.</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <form method="post" action="{% url 'kiosk:category_create' %}" class="cat-add">
+        {% csrf_token %}
+        <input class="input" name="name" maxlength="60" placeholder="New category (e.g. Sandwiches)" required>
+        <label class="cat-drink" title="Tick if customers should choose size and hot/iced"><input type="checkbox" name="is_drink"> Drinks</label>
+        <button class="btn ghost" type="submit">Add category</button>
+      </form>
+      <a class="btn primary" href="{% url 'kiosk:product_create' %}">+ Add product</a>
+    </div>
+  </div>
+
+  {% for c in categories %}
+  <section class="mgr-cat">
+    <div class="mgr-cat-head">
+      <h2>{{ c.name }} <span class="badge {% if c.is_drink %}iced{% endif %}">{% if c.is_drink %}Drinks{% else %}Snacks{% endif %}</span></h2>
+      <div class="mgr-actions">
+        <form method="post" action="{% url 'kiosk:category_move' c.pk 'up' %}">{% csrf_token %}<button class="btn-sm light" title="Move up" {% if forloop.first %}disabled{% endif %}>↑</button></form>
+        <form method="post" action="{% url 'kiosk:category_move' c.pk 'down' %}">{% csrf_token %}<button class="btn-sm light" title="Move down" {% if forloop.last %}disabled{% endif %}>↓</button></form>
+        <a class="btn-sm light" href="{% url 'kiosk:product_create' %}?category={{ c.pk }}">+ Add product</a>
+        <a class="btn-sm light" href="{% url 'kiosk:category_edit' c.pk %}">Rename</a>
+        <form method="post" action="{% url 'kiosk:category_delete' c.pk %}" onsubmit="return confirm('Delete the category {{ c.name|escapejs }}?');">{% csrf_token %}<button class="btn-sm danger" type="submit">Delete</button></form>
+      </div>
+    </div>
+    <table class="mgr-table">
+      <thead>
+        <tr><th>Product</th><th>Price</th><th>On kiosk</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for p in c.products.all %}
+        <tr data-url="{% url 'kiosk:product_quick' p.pk %}" class="{% if not p.is_available %}off{% endif %}">
+          <td>
+            <div class="mgr-drink">
+              <a class="thumbbox" href="{% url 'kiosk:product_edit' p.pk %}" title="Edit photo">
+                {% if p.image %}<img src="{{ p.image.url }}" alt="" loading="lazy">{% else %}<span class="nophoto">No photo</span>{% endif %}
+              </a>
+              <div><b>{{ p.name }}</b>{% if c.is_drink %} <span class="badge {% if p.serving == 'iced' %}iced{% endif %}">{{ p.get_serving_display }}</span>{% endif %}<small>{{ p.description }}</small></div>
+            </div>
+          </td>
+          <td>
+            <div class="price-edit">
+              <span>₱</span>
+              <input type="number" min="1" step="1" value="{{ p.price|floatformat:0 }}" data-prev="{{ p.price|floatformat:0 }}" aria-label="Price for {{ p.name }}">
+              <span class="saved-flag"></span>
+            </div>
+          </td>
+          <td>
+            <label class="switch-toggle" title="Show on kiosk">
+              <input type="checkbox" class="avail" {% if p.is_available %}checked{% endif %} aria-label="Available: {{ p.name }}">
+              <span></span>
+            </label>
+          </td>
+          <td>
+            <div class="mgr-actions">
+              <a class="btn-sm" href="{% url 'kiosk:product_edit' p.pk %}">Edit</a>
+              <form method="post" action="{% url 'kiosk:product_delete' p.pk %}" onsubmit="return confirm('Delete {{ p.name|escapejs }}?');">
+                {% csrf_token %}<button class="btn-sm danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No products in this category yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% empty %}
+  <div class="panel" style="text-align:center">No categories yet. Add one above to get started.</div>
+  {% endfor %}
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var CSRF = "{{ csrf_token }}";
+
+  function save(tr, data, flag) {
+    var fd = new FormData();
+    Object.keys(data).forEach(function (k) { fd.append(k, data[k]); });
+    return fetch(tr.dataset.url, { method: "POST", body: fd, headers: { "X-CSRFToken": CSRF }, credentials: "same-origin" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        flag.className = "saved-flag show" + (res.ok ? "" : " err");
+        flag.textContent = res.ok ? "Saved ✓" : res.j.error;
+        setTimeout(function () { flag.classList.remove("show"); }, 2200);
+        return res;
+      })
+      .catch(function () { flag.className = "saved-flag show err"; flag.textContent = "Network error"; return { ok: false }; });
+  }
+
+  document.querySelectorAll("tr[data-url]").forEach(function (tr) {
+    var input = tr.querySelector(".price-edit input"), flag = tr.querySelector(".saved-flag");
+    input.addEventListener("change", function () {
+      save(tr, { price: input.value }, flag).then(function (res) {
+        if (res.ok) input.dataset.prev = input.value; else input.value = input.dataset.prev;
+      });
+    });
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") input.blur(); });
+    var sw = tr.querySelector(".avail");
+    sw.addEventListener("change", function () {
+      save(tr, { is_available: sw.checked ? "1" : "0" }, flag).then(function (res) {
+        if (res.ok) tr.classList.toggle("off", !sw.checked); else sw.checked = !sw.checked;
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

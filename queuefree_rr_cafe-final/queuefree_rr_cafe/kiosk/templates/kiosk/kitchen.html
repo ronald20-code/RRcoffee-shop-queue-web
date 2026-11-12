@@ -1,0 +1,137 @@
+{% extends "kiosk/base.html" %}
+{% block title %}Kitchen Orders · QueueFree RR Cafe{% endblock %}
+{% block body_class %}kds{% endblock %}
+
+{# The kitchen screen is orders only: no menu, categories or product links. #}
+{% block topbar %}
+<header class="topbar">
+  <a class="brand" href="{% url 'kiosk:home' %}">QueueFree <span>Kitchen</span></a>
+  <nav class="nav">
+    <span class="who">Hi, {{ user.get_username }}</span>
+    <form method="post" action="{% url 'logout' %}" style="display:inline">{% csrf_token %}<button type="submit">Log out</button></form>
+  </nav>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="kds-wrap">
+  <div class="kds-head">
+    <h1>Customer orders</h1>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <span class="live" id="live"><i></i><span id="liveText">Live</span></span>
+      <button class="sound-btn" id="soundBtn">🔇 Sound off</button>
+      <a class="sound-btn" style="text-decoration:none" href="{% url 'kiosk:board' %}" target="_blank">Open pickup board ↗</a>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="col"><h2>New <b id="cNew">0</b></h2><div id="colNew"></div></div>
+    <div class="col"><h2>Preparing <b id="cPrep">0</b></h2><div id="colPrep"></div></div>
+    <div class="col"><h2>Ready for pickup <b id="cReady">0</b></h2><div id="colReady"></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var CSRF = "{{ csrf_token }}";
+  var seen = null;          // ids we've already rendered (to flash + beep on new ones)
+  var sound = false, audioCtx = null;
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function beep() {
+    if (!sound) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      [880, 1175].forEach(function (f, i) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.15, audioCtx.currentTime + i * 0.18);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.18 + 0.16);
+        o.start(audioCtx.currentTime + i * 0.18); o.stop(audioCtx.currentTime + i * 0.18 + 0.17);
+      });
+    } catch (e) {}
+  }
+  document.getElementById("soundBtn").onclick = function () {
+    sound = !sound; this.textContent = sound ? "🔔 Sound on" : "🔇 Sound off"; if (sound) beep();
+  };
+
+  function card(o, fresh) {
+    var actions = "";
+    if (o.status === "received") actions = btn(o.id, "preparing", "Start making", "primary");
+    else if (o.status === "preparing") actions = btn(o.id, "ready", "Mark ready", "primary");
+    else actions = btn(o.id, "completed", "Picked up ✓", "primary");
+    if (o.status !== "ready") actions += '<button class="btn cancel" data-id="' + o.id + '" data-s="cancelled" title="Cancel order">✕</button>';
+
+    var items = o.items.map(function (i) {
+      var detail = [i.opts, i.note ? "“" + i.note + "”" : ""].filter(Boolean).join(" · ");
+      return '<li><span class="q">' + i.qty + '×</span>' + esc(i.name) + (detail ? '<small>' + esc(detail) + '</small>' : '') + '</li>';
+    }).join("");
+
+    var pay = o.paid ? '<span class="tag paid">PAID' + (o.method ? " · " + esc(o.method) : "") + '</span>'
+                     : '<span class="tag unpaid">COLLECT ₱' + Math.round(o.total) + ' AT COUNTER</span>';
+    var late = o.age >= 8 && o.status !== "ready" ? " late" : "";
+
+    return '<div class="ticket-card ' + o.status + late + (fresh ? " fresh" : "") + '">' +
+      '<div class="tc-head"><div class="tc-num">#' + o.label + '</div>' +
+      '<div class="tc-meta">' + esc(o.name) + '<br>' + o.age + ' min ago</div></div>' +
+      '<ul class="tc-items">' + items + '</ul>' +
+      (o.notes ? '<div class="tc-note">📝 ' + esc(o.notes) + '</div>' : '') +
+      '<div style="margin-bottom:10px">' + pay + '</div>' +
+      '<div class="tc-actions">' + actions + '</div></div>';
+  }
+  function btn(id, s, label, cls) {
+    return '<button class="btn ' + cls + '" data-id="' + id + '" data-s="' + s + '">' + label + '</button>';
+  }
+
+  function render(orders) {
+    var newIds = [];
+    if (seen === null) seen = {};
+    else orders.forEach(function (o) { if (!seen[o.id] && o.status === "received") newIds.push(o.id); });
+    orders.forEach(function (o) { seen[o.id] = true; });
+    if (newIds.length) beep();
+
+    var cols = { received: "", preparing: "", ready: "" }, counts = { received: 0, preparing: 0, ready: 0 };
+    orders.forEach(function (o) {
+      if (!(o.status in cols)) return;
+      cols[o.status] += card(o, newIds.indexOf(o.id) > -1); counts[o.status]++;
+    });
+    var empty = '<div class="empty">No orders here</div>';
+    document.getElementById("colNew").innerHTML = cols.received || empty;
+    document.getElementById("colPrep").innerHTML = cols.preparing || empty;
+    document.getElementById("colReady").innerHTML = cols.ready || empty;
+    document.getElementById("cNew").textContent = counts.received;
+    document.getElementById("cPrep").textContent = counts.preparing;
+    document.getElementById("cReady").textContent = counts.ready;
+  }
+
+  function poll() {
+    fetch("{% url 'kiosk:kitchen_api' %}", { credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (d) {
+        render(d.orders);
+        document.getElementById("live").classList.remove("off");
+        document.getElementById("liveText").textContent = "Live · updated " + new Date().toLocaleTimeString();
+      })
+      .catch(function () {
+        document.getElementById("live").classList.add("off");
+        document.getElementById("liveText").textContent = "Offline, retrying…";
+      });
+  }
+
+  document.querySelector(".cols").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-id]"); if (!b) return;
+    if (b.dataset.s === "cancelled" && !confirm("Cancel this order?")) return;
+    b.disabled = true;
+    var fd = new FormData(); fd.append("status", b.dataset.s);
+    fetch("/kitchen/update/" + b.dataset.id + "/", { method: "POST", body: fd, headers: { "X-CSRFToken": CSRF }, credentials: "same-origin" })
+      .then(poll);
+  });
+
+  poll();
+  setInterval(poll, 3000);
+})();
+</script>
+{% endblock %}

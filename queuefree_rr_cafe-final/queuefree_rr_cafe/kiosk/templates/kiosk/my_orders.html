@@ -1,0 +1,30 @@
+{% extends "kiosk/base.html" %}
+{% block title %}My orders · QueueFree RR Cafe{% endblock %}
+
+{% block content %}
+<div class="page orders-list">
+  <h1 style="margin-bottom:18px">My orders</h1>
+  {% for o in orders %}
+  <div class="panel">
+    <div>
+      <div style="font-family:var(--display);font-size:1.6rem;font-weight:800">#{{ o.label }}
+        <span class="tag {% if o.payment_status == 'paid' %}paid{% else %}unpaid{% endif %}">{{ o.get_status_display }}</span></div>
+      <div style="color:var(--muted);font-size:.88rem;margin-top:4px">
+        {{ o.created_at|date:"M j, g:i A" }} ·
+        {% for i in o.items.all %}{{ i.quantity }}× {{ i.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div class="price">₱{{ o.total|floatformat:0 }}</div>
+      {% if o.status == 'pending_payment' %}
+        <a href="{% url 'kiosk:pay' o.pk %}">Finish payment</a>
+      {% else %}
+        <a href="{% url 'kiosk:order_status' o.pk %}">Track</a>
+      {% endif %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="panel" style="text-align:center">No orders yet. <a href="{% url 'kiosk:menu' %}">Browse the menu</a>.</div>
+  {% endfor %}
+</div>
+{% endblock %}

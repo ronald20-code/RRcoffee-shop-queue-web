@@ -1,0 +1,47 @@
+{% extends "kiosk/base.html" %}
+{% load static %}
+{% block title %}Create account · QueueFree RR Cafe{% endblock %}
+{% block topbar %}{% endblock %}
+
+{% block content %}
+<div class="auth">
+  <section class="auth-hero">
+    <canvas id="hero3d"></canvas>
+    <h1>Join <span>QueueFree</span></h1>
+    <p>One account keeps your order history and queue numbers in one place.</p>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-card">
+      <h2>Create account</h2>
+      <p class="sub">It takes less than a minute.</p>
+
+      <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+        {% endfor %}
+        <button class="btn primary block" type="submit">Sign up</button>
+      </form>
+
+      <p class="switch">Already have an account? <a href="{% url 'login' %}">Log in</a></p>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="{% static 'kiosk/cup3d.js' %}"></script>
+<script>
+  (function () {
+    if (!window.THREE) return;
+    var v = new QF3D.Viewer(document.getElementById("hero3d"));
+    v.show({ id: 9, name: "Spanish Latte", cup: "glass", liquid: "#c79a6b", layer: "#fff1d9", topping: "", ice: true, straw: true });
+  })();
+</script>
+{% endblock %}

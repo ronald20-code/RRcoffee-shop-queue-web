@@ -1,0 +1,98 @@
+{% extends "kiosk/base.html" %}
+{% block title %}Order #{{ order.label }} · QueueFree RR Cafe{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width:720px">
+  <section class="panel ticket">
+    <div class="qlabel">Your queue number</div>
+    <div class="qn">{{ order.label }}</div>
+    <div style="margin-top:6px">
+      <span class="tag {% if order.payment_status == 'paid' %}paid{% else %}unpaid{% endif %}">
+        {% if order.payment_status == 'paid' %}Paid · {{ order.get_payment_method_display }}{% if order.payment_reference %} · {{ order.payment_reference }}{% endif %}
+        {% else %}Pay at counter{% endif %}
+      </span>
+    </div>
+
+    <div class="progress" id="progress">
+      <div class="step" data-s="received"><div class="dot">📝</div>Received</div>
+      <div class="step" data-s="preparing"><div class="dot">☕</div>Preparing</div>
+      <div class="step" data-s="ready"><div class="dot">🔔</div>Ready</div>
+    </div>
+    <p id="statusText" style="font-weight:700;margin:6px 0 0"></p>
+    <p id="aheadText" style="color:var(--muted);margin:4px 0 0"></p>
+    <div class="ready-banner" id="readyBanner">Your order is ready, please pick it up at the counter!</div>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <h3 style="margin-bottom:10px">Your order</h3>
+    {% for i in order.items.all %}
+    <div class="summary-line"><div>{{ i.quantity }} × {{ i.name }}{% if i.options_label or i.note %}<small>{{ i.options_label }}{% if i.options_label and i.note %} · {% endif %}{{ i.note }}</small>{% endif %}</div><div>₱{{ i.line_total|floatformat:0 }}</div></div>
+    {% endfor %}
+    <div class="big-total" style="font-size:1.2rem"><span>Total</span><span>₱{{ order.total|floatformat:0 }}</span></div>
+  </section>
+
+  <div class="status-actions screen-only">
+    <button type="button" class="btn" id="printBtn">🖨 Print queue number</button>
+    <a class="btn primary" href="{% url 'kiosk:menu' %}">Next order · click to add another order →</a>
+  </div>
+</div>
+
+<!-- Printable queue ticket (hidden on screen, the only thing shown when printing) -->
+<div class="print-ticket" aria-hidden="true">
+  <div class="pt-brand">QueueFree RR Cafe</div>
+  <div class="pt-label">QUEUE NUMBER</div>
+  <div class="pt-number">{{ order.label }}</div>
+  <div class="pt-name">{% if order.customer_name %}{{ order.customer_name }}{% else %}Guest{% endif %}</div>
+  <div class="pt-line"></div>
+  <ul class="pt-items">
+    {% for i in order.items.all %}
+    <li><span>{{ i.quantity }} × {{ i.name }}</span><span>₱{{ i.line_total|floatformat:0 }}</span></li>
+    {% if i.options_label or i.note %}<li class="pt-sub">{{ i.options_label }}{% if i.options_label and i.note %} · {% endif %}{{ i.note }}</li>{% endif %}
+    {% endfor %}
+  </ul>
+  <div class="pt-line"></div>
+  <div class="pt-total"><span>TOTAL</span><span>₱{{ order.total|floatformat:0 }}</span></div>
+  <div class="pt-pay">{% if order.payment_status == 'paid' %}PAID · {{ order.get_payment_method_display }}{% if order.payment_reference %} · {{ order.payment_reference }}{% endif %}{% else %}PAY AT COUNTER{% endif %}</div>
+  <div class="pt-line"></div>
+  <div class="pt-foot">{{ order.created_at|date:"M j, Y · g:i A" }}<br>Please wait for your number to be called.<br>Thank you!</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var order = ["received", "preparing", "ready"];
+  var texts = {
+    pending_payment: "Waiting for payment…",
+    received: "We got your order. The kitchen will start soon.",
+    preparing: "A barista is making your drinks right now.",
+    ready: "Ready for pickup!",
+    completed: "Picked up. Enjoy your drinks!",
+    cancelled: "This order was cancelled. Please see the cashier."
+  };
+  var timer;
+  function paint(d) {
+    var idx = order.indexOf(d.status);
+    if (d.status === "completed") idx = 3;
+    document.querySelectorAll(".step").forEach(function (el, i) {
+      el.classList.toggle("done", i < idx);
+      el.classList.toggle("now", i === idx);
+    });
+    document.getElementById("statusText").textContent = texts[d.status] || d.label;
+    var a = document.getElementById("aheadText");
+    a.textContent = (d.status === "received" || d.status === "preparing")
+      ? (d.ahead === 0 ? "You're next!" : d.ahead + " order" + (d.ahead > 1 ? "s" : "") + " ahead of you") : "";
+    document.getElementById("readyBanner").classList.toggle("show", d.status === "ready");
+    if (d.status === "ready" && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    if (d.status === "completed" || d.status === "cancelled") clearInterval(timer);
+  }
+  function poll() {
+    fetch("{% url 'kiosk:order_status_api' order.pk %}", { credentials: "same-origin" })
+      .then(function (r) { return r.json(); }).then(paint).catch(function () {});
+  }
+  document.getElementById("printBtn").addEventListener("click", function () { window.print(); });
+  poll();
+  timer = setInterval(poll, 3000);
+})();
+</script>
+{% endblock %}

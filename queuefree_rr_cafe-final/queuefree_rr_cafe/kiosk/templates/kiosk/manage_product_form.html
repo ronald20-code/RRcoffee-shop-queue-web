@@ -1,0 +1,135 @@
+{% extends "kiosk/base.html" %}
+{% block title %}{% if product %}Edit {{ product.name }}{% else %}Add product{% endif %} · QueueFree RR Cafe{% endblock %}
+
+{% block content %}
+<main class="mgr">
+  <div class="mgr-head">
+    <h1>{% if product %}Edit “{{ product.name }}”{% else %}Add a product{% endif %}</h1>
+    <a class="btn ghost" href="{% url 'kiosk:manage_menu' %}">← Back to menu manager</a>
+  </div>
+
+  <div class="mgr-form-grid">
+    <form method="post" enctype="multipart/form-data" class="panel" novalidate id="productForm">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
+
+      <div class="field"><label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}</div>
+
+      <div class="two">
+        <div class="field"><label for="{{ form.category.id_for_label }}">Category</label>{{ form.category }}{{ form.category.errors }}</div>
+        <div class="field"><label for="{{ form.price.id_for_label }}">{{ form.price.label }}</label>{{ form.price }}{{ form.price.errors }}</div>
+      </div>
+
+      <div class="field"><label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>{{ form.description }}{{ form.description.errors }}</div>
+
+      <div class="field" id="servingRow"><label for="{{ form.serving.id_for_label }}">{{ form.serving.label }}</label>{{ form.serving }}{{ form.serving.errors }}
+        <span class="helptext">Drinks only. Customers also choose a size for drinks.</span></div>
+
+      <h3 style="margin:22px 0 10px">Photo</h3>
+      <div class="field upload">
+        <div class="upload-row">
+          <label class="btn ghost" for="{{ form.image.id_for_label }}" id="chooseBtn">{% if product and product.image %}Replace photo…{% else %}Choose photo…{% endif %}</label>
+          {{ form.image }}
+          <button type="button" class="btn-sm light" id="undoBtn" style="display:none">Undo new photo</button>
+          <span class="helptext" id="fileName">No new photo chosen</span>
+        </div>
+        <span class="helptext">JPG, JPEG or PNG · up to {{ max_mb }} MB. Large photos are resized automatically.</span>
+        <div class="upload-error" id="uploadError" role="alert"></div>
+        {{ form.image.errors }}
+        {% if product and product.image %}
+        <div class="check" style="margin-top:10px">{{ form.remove_image }}<label for="{{ form.remove_image.id_for_label }}">Remove current photo (customers will see “Photo coming soon”)</label></div>
+        {% endif %}
+      </div>
+
+      <div class="field check">{{ form.is_available }}<label for="{{ form.is_available.id_for_label }}">{{ form.is_available.label }}</label></div>
+
+      <button class="btn primary block" type="submit" style="margin-top:8px">{% if product %}Save changes{% else %}Add to menu{% endif %}</button>
+    </form>
+
+    <aside class="preview">
+      <div class="preview-title">Preview: how customers will see it</div>
+      <article class="card preview-card" aria-hidden="true">
+        <div class="thumb" id="pvThumb"></div>
+        <h3 id="pvName"></h3>
+        <p id="pvDesc"></p>
+        <div class="row">
+          <div><span class="price" id="pvPrice"></span> <span class="badge" id="pvBadge"></span></div>
+          <span class="add">+</span>
+        </div>
+      </article>
+      <span class="helptext" id="pvNote"></span>
+    </aside>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{{ drink_flags|json_script:"drink-flags" }}
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById("id_" + id); };
+  var FLAGS = JSON.parse(document.getElementById("drink-flags").textContent);
+  var MAX_BYTES = {{ max_mb }} * 1024 * 1024;
+  var CURRENT = "{% if product and product.image %}{{ product.image.url }}{% endif %}";   // saved photo, if any
+  var fileInput = $("image"), removeBox = $("remove_image");
+  var objectUrl = "";
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function showError(msg) { document.getElementById("uploadError").textContent = msg || ""; }
+
+  function renderThumb() {
+    var src = objectUrl || (removeBox && removeBox.checked ? "" : CURRENT);
+    document.getElementById("pvThumb").innerHTML = src
+      ? '<img alt="" src="' + esc(src) + '">'
+      : '<div class="ph-photo"><span>Photo coming soon</span></div>';
+    var note = objectUrl ? "New photo, not saved yet." : (src ? "Current saved photo." : "No photo yet.");
+    document.getElementById("pvNote").textContent = note;
+  }
+
+  function renderText() {
+    document.getElementById("pvName").textContent = $("name").value || "Product name";
+    document.getElementById("pvDesc").textContent = $("description").value;
+    var price = parseFloat($("price").value);
+    document.getElementById("pvPrice").textContent = isNaN(price) ? "₱0" : "₱" + Math.round(price).toLocaleString();
+    var isDrink = !!FLAGS[$("category").value];
+    document.getElementById("servingRow").style.display = isDrink ? "" : "none";
+    var badge = document.getElementById("pvBadge");
+    if (isDrink) { var iced = $("serving").value === "iced"; badge.style.display = ""; badge.textContent = iced ? "Iced" : "Hot"; badge.className = "badge" + (iced ? " iced" : ""); }
+    else badge.style.display = "none";
+  }
+
+  function clearChosen() {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = ""; fileInput.value = "";
+    document.getElementById("undoBtn").style.display = "none";
+    document.getElementById("fileName").textContent = "No new photo chosen";
+    renderThumb();
+  }
+
+  fileInput.addEventListener("change", function () {
+    showError("");
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) { clearChosen(); return; }
+    var okType = /\.(jpe?g|png)$/i.test(f.name) && /^image\/(jpeg|png)$/.test(f.type);
+    if (!okType) { clearChosen(); showError("Please choose a JPG, JPEG or PNG image."); return; }
+    if (f.size > MAX_BYTES) { clearChosen(); showError("That photo is too large. The maximum is {{ max_mb }} MB."); return; }
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(f);
+    if (removeBox) removeBox.checked = false;
+    document.getElementById("fileName").textContent = f.name;
+    document.getElementById("undoBtn").style.display = "";
+    renderThumb();
+  });
+  document.getElementById("undoBtn").addEventListener("click", function () { showError(""); clearChosen(); });
+  if (removeBox) removeBox.addEventListener("change", function () { if (removeBox.checked) clearChosen(); else renderThumb(); });
+
+  ["name", "description", "price", "category", "serving"].forEach(function (id) {
+    $(id).addEventListener("input", renderText);
+    $(id).addEventListener("change", renderText);
+  });
+
+  renderText(); renderThumb();
+})();
+</script>
+{% endblock %}

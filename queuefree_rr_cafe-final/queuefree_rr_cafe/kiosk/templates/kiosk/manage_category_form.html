@@ -1,0 +1,17 @@
+{% extends "kiosk/base.html" %}
+{% block title %}Edit category · QueueFree RR Cafe{% endblock %}
+
+{% block content %}
+<main class="mgr" style="max-width:640px">
+  <div class="mgr-head">
+    <h1>Edit category</h1>
+    <a class="btn ghost" href="{% url 'kiosk:manage_menu' %}">← Back</a>
+  </div>
+  <form method="post" class="panel" novalidate>
+    {% csrf_token %}
+    <div class="field"><label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}</div>
+    <div class="field check">{{ form.is_drink }}<label for="{{ form.is_drink.id_for_label }}">{{ form.is_drink.label }}</label></div>
+    <button class="btn primary block" type="submit">Save</button>
+  </form>
+</main>
+{% endblock %}

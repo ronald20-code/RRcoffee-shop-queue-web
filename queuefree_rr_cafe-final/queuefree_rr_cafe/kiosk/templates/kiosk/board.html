@@ -1,0 +1,34 @@
+{% extends "kiosk/base.html" %}
+{% block title %}Now Serving · QueueFree RR Cafe{% endblock %}
+{% block body_class %}board{% endblock %}
+{% block topbar %}{% endblock %}
+
+{% block content %}
+<div class="board-wrap">
+  <section class="board-col">
+    <h1>Preparing</h1>
+    <div class="nums" id="prep"></div>
+  </section>
+  <section class="board-col ready">
+    <h1>Ready for pickup 🔔</h1>
+    <div class="nums" id="ready"></div>
+  </section>
+</div>
+<div class="board-brand">QueueFree RR Cafe</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function fill(id, list) {
+    document.getElementById(id).innerHTML = list.map(function (n) { return '<div class="num">' + n + '</div>'; }).join("");
+  }
+  function poll() {
+    fetch("{% url 'kiosk:board_api' %}").then(function (r) { return r.json(); }).then(function (d) {
+      fill("prep", d.preparing); fill("ready", d.ready);
+    }).catch(function () {});
+  }
+  poll(); setInterval(poll, 3000);
+})();
+</script>
+{% endblock %}

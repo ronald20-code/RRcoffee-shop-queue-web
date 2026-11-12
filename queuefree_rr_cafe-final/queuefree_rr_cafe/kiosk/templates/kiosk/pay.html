@@ -1,0 +1,87 @@
+{% extends "kiosk/base.html" %}
+{% block title %}Payment · QueueFree RR Cafe{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="pay-grid">
+    <section class="panel">
+      <h2>Order summary</h2>
+      <p style="color:var(--muted);margin:4px 0 14px">Queue number <b>#{{ order.label }}</b></p>
+      {% for i in order.items.all %}
+      <div class="summary-line">
+        <div>{{ i.quantity }} × {{ i.name }}{% if i.options_label or i.note %}<small>{{ i.options_label }}{% if i.options_label and i.note %} · {% endif %}{{ i.note }}</small>{% endif %}</div>
+        <div>₱{{ i.line_total|floatformat:0 }}</div>
+      </div>
+      {% endfor %}
+      {% if order.notes %}<p style="color:var(--muted);font-size:.9rem">Note: {{ order.notes }}</p>{% endif %}
+      <div class="big-total"><span>Total</span><span>₱{{ order.total|floatformat:0 }}</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>Choose how to pay</h2>
+      {% if error %}<div class="form-error" style="margin-top:12px">{{ error }}</div>{% endif %}
+
+      <form method="post" id="payForm" autocomplete="off">
+        {% csrf_token %}
+        <div class="methods">
+          <label class="method"><input type="radio" name="method" value="gcash" checked><span><i>📱</i>GCash</span></label>
+          <label class="method"><input type="radio" name="method" value="maya"><span><i>💚</i>Maya</span></label>
+          <label class="method"><input type="radio" name="method" value="card"><span><i>💳</i>Card</span></label>
+          <label class="method"><input type="radio" name="method" value="cash"><span><i>🧾</i>At counter</span></label>
+        </div>
+
+        <div class="sandbox"><b>Sandbox mode.</b> No real money is charged. Wallets: any number like <code>09171234567</code> and a 4-digit PIN. Card: <code>4242 4242 4242 4242</code>, any future expiry, any CVC.</div>
+
+        <div class="method-form show" data-m="gcash wallet">
+          <div class="field"><label>GCash mobile number</label><input name="mobile" inputmode="numeric" maxlength="11" placeholder="09XXXXXXXXX"></div>
+          <div class="field"><label>4-digit PIN</label><input name="pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+        </div>
+
+        <div class="method-form" data-m="card">
+          <div class="field"><label>Card number</label><input name="number" inputmode="numeric" maxlength="19" placeholder="4242 4242 4242 4242"></div>
+          <div class="two">
+            <div class="field"><label>Expiry</label><input name="expiry" maxlength="5" placeholder="MM/YY"></div>
+            <div class="field"><label>CVC</label><input name="cvc" inputmode="numeric" maxlength="4" placeholder="123"></div>
+          </div>
+        </div>
+
+        <div class="method-form" data-m="cash">
+          <p style="margin:0 0 16px;color:var(--muted);line-height:1.5">Your order goes to the kitchen now. Pay the cashier when your number is called.</p>
+        </div>
+
+        <button class="btn primary block" type="submit" id="payBtn">Pay ₱{{ order.total|floatformat:0 }}</button>
+        <a class="btn ghost block" style="margin-top:8px" href="{% url 'kiosk:menu' %}">← Back to menu</a>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var total = "₱{{ order.total|floatformat:0 }}";
+  function sync() {
+    var m = document.querySelector('input[name="method"]:checked').value;
+    document.querySelectorAll(".method-form").forEach(function (f) {
+      var wallet = (m === "gcash" || m === "maya") && f.dataset.m.indexOf("wallet") > -1;
+      f.classList.toggle("show", wallet || f.dataset.m === m);
+    });
+    var label = { gcash: "Pay with GCash", maya: "Pay with Maya", card: "Pay by card", cash: "Send order to kitchen" }[m];
+    document.getElementById("payBtn").textContent = m === "cash" ? label : label + " · " + total;
+  }
+  document.querySelectorAll('input[name="method"]').forEach(function (r) { r.addEventListener("change", sync); });
+  var num = document.querySelector('input[name="number"]');
+  num.addEventListener("input", function () {
+    var d = num.value.replace(/\D/g, "").slice(0, 16);
+    num.value = d.replace(/(.{4})/g, "$1 ").trim();
+  });
+  var exp = document.querySelector('input[name="expiry"]');
+  exp.addEventListener("input", function () {
+    var d = exp.value.replace(/\D/g, "").slice(0, 4);
+    exp.value = d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d;
+  });
+  sync();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "kiosk/base.html" %}
+{% load static %}
+{% block title %}Log in · QueueFree RR Cafe{% endblock %}
+{% block topbar %}{% endblock %}
+
+{% block content %}
+<div class="auth">
+  <section class="auth-hero">
+    <canvas id="hero3d"></canvas>
+    <h1>QueueFree <span>RR Cafe</span></h1>
+    <p>Order at the kiosk, pay digitally, and watch your drink move from the bar to the pickup counter. No lines.</p>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-card">
+      <h2>Welcome back</h2>
+      <p class="sub">Log in to start your order.</p>
+
+      <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-error">{{ form.non_field_errors.0 }}</div>{% endif %}
+        <div class="field">
+          <label for="{{ form.username.id_for_label }}">Username</label>
+          <input type="text" name="username" id="{{ form.username.id_for_label }}" autocomplete="username" autofocus required value="{{ form.username.value|default:'' }}">
+        </div>
+        <div class="field">
+          <label for="{{ form.password.id_for_label }}">Password</label>
+          <input type="password" name="password" id="{{ form.password.id_for_label }}" autocomplete="current-password" required>
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button class="btn primary block" type="submit">Log in</button>
+      </form>
+
+      <p class="switch">New here? <a href="{% url 'register' %}">Create an account</a></p>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="{% static 'kiosk/cup3d.js' %}"></script>
+<script>
+  // Featured drink spinning on the login hero
+  (function () {
+    if (!window.THREE) return;
+    var v = new QF3D.Viewer(document.getElementById("hero3d"));
+    v.show({ id: 4, name: "Caramel Macchiato", cup: "hot", liquid: "#b9824c", layer: "#f6e6cf", topping: "#d98b2b", ice: false, straw: false });
+  })();
+</script>
+{% endblock %}
